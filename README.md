@@ -7,13 +7,16 @@ Fail-closed on crash. Curated threat catalog. Pure stdlib — no runtime depende
 ## What it blocks
 
 **Supply chain (Bash)**
-- `npm install` / `pnpm add` / `yarn add` of known-malicious or typosquatted packages
-- `pip install` / `uv add` of pypi packages with known compromises
+- `npm install` / `pnpm add` / `yarn add` of known-malicious or typosquatted packages (hard `deny`)
+- `pip install` / `uv add` of pypi packages with known compromises (hard `deny`)
+- Pinned versions affected by a known CVE — checked against OSV (hard `deny`)
+- Unpinned installs of packages with historical CVE records — soft `ask` to nudge pinning
 - `curl ... | sh` and similar pipe-to-shell patterns from untrusted hosts
 
 **Sensitive paths (Read / Write / Edit / MultiEdit / NotebookEdit)**
 - `~/.ssh/`, `~/.aws/`, `~/.gnupg/`, `~/.netrc`, `~/.pypirc`, `~/.docker/config.json`, `~/.config/gcloud/`, `/etc/shadow`, `/etc/sudoers`
-- Any `.env*`, SSH private keys, `.npmrc`, `.pgpass` matched by basename anywhere in the tree
+- Any `.env*`, SSH private keys, `.npmrc`, `.pgpass`, `credentials.json`, `terraform.tfvars*` matched by basename anywhere in the tree
+- Any file with extension `.pem`, `.key`, `.p12`, `.pfx` (private keys and PKCS#12 bundles). Public-cert formats `.crt` / `.cer` / `.csr` intentionally remain allowed — they are not secrets.
 
 **Git footguns (Bash)**
 - `git push --force` / `-f` (allows `--force-with-lease`, the safe variant)
@@ -24,6 +27,16 @@ Fail-closed on crash. Curated threat catalog. Pure stdlib — no runtime depende
 **Exfiltration (Bash)**
 - Outbound to `transfer.sh`, `webhook.site`, `ngrok.io`, and known C2 hosts
 - Known IOCs from real incidents (Postmark MCP, etc.)
+
+## Decision tiers
+
+Each rule returns one of three outcomes — borrowed from the underlying Claude Code hook protocol:
+
+| Outcome | When | Effect |
+|---|---|---|
+| `allow` (silent) | No rule matched | Tool call proceeds normally |
+| `ask` | Soft warning (e.g. unpinned package has historical CVEs) | Claude Code prompts the user — proceed if intentional, decline otherwise |
+| `deny` | Hard block (typosquats, sensitive paths, known affected versions, footguns) | Tool call is rejected with a `permissionDecisionReason` explaining what triggered it |
 
 ## Install
 
@@ -63,6 +76,12 @@ Claude should refuse with a `permissionDecisionReason` from `git-safety.sh`. If 
 ## Threat catalog
 
 See [`docs/SECURITY-PATTERNS.md`](docs/SECURITY-PATTERNS.md) for the full hook shipping protocol and the rules each detector enforces.
+
+## Environment variables
+
+| Variable | Effect |
+|---|---|
+| `CLAUKIT_OFFLINE=1` | Skip all OSV network queries. Useful in air-gapped environments or to make CI runs deterministic. Local detection rules (typosquats, sensitive paths, git footguns) still run. |
 
 ## Troubleshooting
 
