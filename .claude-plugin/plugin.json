@@ -1,0 +1,12 @@
+{
+  "name": "claukit",
+  "version": "0.1.0",
+  "description": "Security hooks for Claude Code — blocks dangerous commands, sensitive file access, force-pushes, and supply-chain attacks. Curated catalog, fail-closed on crash.",
+  "author": {
+    "name": "Guille Varela",
+    "url": "https://nodox.studio"
+  },
+  "homepage": "https://github.com/nodox-studio/claukit",
+  "repository": "https://github.com/nodox-studio/claukit",
+  "license": "MIT"
+}
