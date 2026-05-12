@@ -41,6 +41,19 @@ SENSITIVE_FILENAMES = [
     ".env.local", ".env.production", ".env.development", ".env.staging", ".env.test",
     "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519",
     ".npmrc", ".pgpass",
+    "credentials.json",         # Google Cloud, Firebase, others
+    "terraform.tfvars",         # Terraform secrets file
+    "terraform.tfvars.json",    # JSON variant
+]
+
+# Files matched by extension (lowercased). Covers private keys and key bundles.
+# Public-cert formats (.crt, .cer, .csr) are intentionally NOT blocked — they're
+# not secrets. .pfx is the Windows variant of .p12.
+SENSITIVE_EXTENSIONS = [
+    ".pem",   # PEM-encoded private keys and certs
+    ".key",   # RSA / EC private keys (Laravel app.key also legitimately blocked)
+    ".p12",   # PKCS#12 bundle (certificate + private key)
+    ".pfx",   # PKCS#12 Windows variant
 ]
 
 # ── Known IOCs ─────────────────────────────────────────────────────────────────
@@ -134,15 +147,22 @@ POPULAR_PYPI_PACKAGES = [
 OSV_API = "https://api.osv.dev/v1/query"
 OSV_TIMEOUT = 3  # seconds — fail open on timeout
 
-def query_osv(name: str, version: str, ecosystem: str) -> list:
+def query_osv(name: str, ecosystem: str, version: str | None = None) -> list:
     """
     Query OSV database for known CVEs.
     Returns list of vuln IDs, empty list if safe or on network error (fail open).
+
+    With version → returns CVEs affecting that specific version.
+    Without version → returns ALL known CVEs for the package (history).
     """
-    payload = json.dumps({
-        "version": version,
-        "package": {"name": name, "ecosystem": ecosystem},
-    }).encode()
+    # Test harness escape hatch — skip all network when CLAUKIT_OFFLINE=1.
+    if os.environ.get("CLAUKIT_OFFLINE") == "1":
+        return []
+
+    body = {"package": {"name": name, "ecosystem": ecosystem}}
+    if version:
+        body["version"] = version
+    payload = json.dumps(body).encode()
 
     req = urllib.request.Request(
         OSV_API,
@@ -268,6 +288,21 @@ def deny(reason: str) -> None:
     sys.exit(0)
 
 
+def ask(reason: str) -> None:
+    """Surface the decision to the user as a permission prompt, not a hard block.
+    Used when severity is warning-level (e.g. historical CVE without a pinned version).
+    """
+    _log_event("ASK", _CTX.get("tool", ""), reason, _CTX.get("cmd", ""))
+    print(json.dumps({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "ask",
+            "permissionDecisionReason": f"ClauKit Guard: {reason}",
+        }
+    }))
+    sys.exit(0)
+
+
 def _levenshtein(a: str, b: str) -> int:
     if abs(len(a) - len(b)) > 2:
         return 99
@@ -295,6 +330,9 @@ def check_path(path: str) -> None:
     for blocked in SENSITIVE_FILENAMES:
         if basename == blocked:
             deny(f"blocked access to sensitive file: {path}")
+    _, ext = os.path.splitext(basename.lower())
+    if ext in SENSITIVE_EXTENSIONS:
+        deny(f"blocked access to sensitive file ({ext}): {path}")
 
 
 def check_bash(cmd: str) -> None:
@@ -407,13 +445,22 @@ def check_npm_package(name: str, version: str | None) -> None:
                 f"Verify at npmjs.com/package/{popular} before installing."
             )
 
-    # OSV check — only when version is explicit
+    # OSV check — version pinned → hard deny on hit; unpinned → ask if history exists.
     if version:
-        cves = query_osv(name, version, "npm")
+        cves = query_osv(name, "npm", version)
         if cves:
             deny(
                 f"'{name}@{version}' has known vulnerabilities: {', '.join(cves[:5])}. "
                 f"Check https://osv.dev/list?q={name} for details."
+            )
+    else:
+        history = query_osv(name, "npm")
+        if history:
+            ask(
+                f"'{name}' has {len(history)} historical CVE(s) — installing without "
+                f"a pinned version means picking whatever npm serves today. "
+                f"Examples: {', '.join(history[:3])}. Pin a known-safe version "
+                f"(e.g. {name}@<version>) to remove this warning."
             )
 
 
@@ -428,13 +475,22 @@ def check_pypi_package(name: str, version: str | None) -> None:
                 f"Verify at pypi.org/project/{popular} before installing."
             )
 
-    # OSV check — only when version is explicit
+    # OSV check — version pinned → hard deny on hit; unpinned → ask if history exists.
     if version:
-        cves = query_osv(name, version, "PyPI")
+        cves = query_osv(name, "PyPI", version)
         if cves:
             deny(
                 f"'{name}=={version}' has known vulnerabilities: {', '.join(cves[:5])}. "
                 f"Check https://osv.dev/list?q={name} for details."
+            )
+    else:
+        history = query_osv(name, "PyPI")
+        if history:
+            ask(
+                f"'{name}' has {len(history)} historical CVE(s) — installing without "
+                f"a pinned version means picking whatever pip serves today. "
+                f"Examples: {', '.join(history[:3])}. Pin a known-safe version "
+                f"(e.g. {name}=={version or '<version>'}) to remove this warning."
             )
 
 

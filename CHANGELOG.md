@@ -5,6 +5,19 @@ All notable changes to ClauKit will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] — 2026-05-12
+
+### Added
+
+- **Sensitive filename catalog expanded** — `claukit-guard.py` now blocks `credentials.json`, `terraform.tfvars`, `terraform.tfvars.json`, and any file with extension `.pem`, `.key`, `.p12`, `.pfx`. Public-cert formats (`.crt`, `.cer`, `.csr`) intentionally remain unblocked — they are not secrets.
+- **OSV warning for unpinned packages** — `npm install <pkg>` or `pip install <pkg>` without a version now queries OSV for the package's historical CVE record. If any are found, the hook returns `permissionDecision: "ask"` with a nudge to pin a known-safe version. Pinned versions still receive a hard `deny` when the specific version is affected.
+- `CLAUKIT_OFFLINE=1` environment variable — escape hatch that skips all OSV network queries. Used by the test harness for deterministic runs; users can opt in to suppress all network checks if needed.
+
+### Changed
+
+- `query_osv()` signature: `(name, ecosystem, version=None)`. Version is now optional.
+- Test harness classifies `ask` responses as a distinct outcome alongside `allow` / `deny` / `crash`.
+
 ## [0.1.0] — 2026-05-12
 
 ### Added

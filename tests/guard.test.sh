@@ -18,6 +18,11 @@ if ! command -v jq &>/dev/null; then
   exit 0
 fi
 
+# Force the guard to skip all OSV network queries during tests. Capability
+# evals for the "unpinned package has historical CVEs → ask" path require
+# live network and live OSV data; they run separately.
+export CLAUKIT_OFFLINE=1
+
 PASS=0
 FAIL=0
 
@@ -57,6 +62,7 @@ run_bash() {
   _run_guard "$payload"
   if [ "$GUARD_EXIT" -ne 0 ]; then actual=crash
   elif [ -z "$GUARD_STDOUT" ]; then actual=allow
+  elif echo "$GUARD_STDOUT" | grep -q '"permissionDecision": "ask"'; then actual=ask
   else actual=deny; fi
   _record "$desc" "$expect" "$actual"
 }
@@ -68,6 +74,7 @@ run_read() {
   _run_guard "$payload"
   if [ "$GUARD_EXIT" -ne 0 ]; then actual=crash
   elif [ -z "$GUARD_STDOUT" ]; then actual=allow
+  elif echo "$GUARD_STDOUT" | grep -q '"permissionDecision": "ask"'; then actual=ask
   else actual=deny; fi
   _record "$desc" "$expect" "$actual"
 }
@@ -78,6 +85,7 @@ run_multiedit() {
   _run_guard "$payload"
   if [ "$GUARD_EXIT" -ne 0 ]; then actual=crash
   elif [ -z "$GUARD_STDOUT" ]; then actual=allow
+  elif echo "$GUARD_STDOUT" | grep -q '"permissionDecision": "ask"'; then actual=ask
   else actual=deny; fi
   _record "$desc" "$expect" "$actual"
 }
@@ -181,6 +189,24 @@ run_read "Read: id_ed25519 blocked" \
 
 run_read "Read: README.md allowed" \
   "README.md" allow
+
+run_read "Read: credentials.json blocked" \
+  "credentials.json" deny
+
+run_read "Read: terraform.tfvars blocked" \
+  "terraform.tfvars" deny
+
+run_read "Read: server.pem blocked (extension)" \
+  "/etc/ssl/server.pem" deny
+
+run_read "Read: app.key blocked (extension)" \
+  "storage/app.key" deny
+
+run_read "Read: bundle.p12 blocked (extension)" \
+  "bundle.p12" deny
+
+run_read "Read: cert.crt allowed (public cert, not secret)" \
+  "cert.crt" allow
 
 # ── Benign pass-through ───────────────────────────────────────────────────────
 

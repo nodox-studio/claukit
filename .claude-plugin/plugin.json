@@ -1,6 +1,6 @@
 {
   "name": "claukit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Security hooks for Claude Code — blocks dangerous commands, sensitive file access, force-pushes, and supply-chain attacks. Curated catalog, fail-closed on crash.",
   "author": {
     "name": "Guille Varela",
